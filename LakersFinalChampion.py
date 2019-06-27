@@ -68,10 +68,7 @@ class Lakers(sc2.BotAI):
             await self.on_game_start()
             return
         cc = self.units(COMMANDCENTER).ready
-        if not cc.exists:
-            self.worker_rush(iteration)
-            return
-      
+        
         if self.stage == "early_rush":
             await self.early_rush(iteration)
             return
@@ -86,7 +83,7 @@ class Lakers(sc2.BotAI):
         #造农民
         await self.train_WORKERS(cc)
         #1.房子，第一个堵路口
-        await self.build_rush_SUPPLYDEPOT(cc)
+        await self.build_early_SUPPLYDEPOT(cc)
         
         #2. 气矿
         await self.build_REFINERY(cc)
@@ -95,7 +92,7 @@ class Lakers(sc2.BotAI):
         if self.units(FACTORY).amount >= 1:
             await self.build_ENGINEERINGBAY(cc)
         await self.upgrader()
-        await self.upgrade_army_buildings()
+        #await self.upgrade_army_buildings()
         
         #3. 兵营
         await self.build_rush_BARRACKS(cc)
@@ -113,8 +110,9 @@ class Lakers(sc2.BotAI):
 		
 	# 坦克x2  机枪兵x14
         if self.units(SIEGETANK).amount >= 2:
-            await self.do_rush(iteration)
-       
+            await self.do_rush(cc)
+ 
+ 
         
     # Start
     async def main_progress(self, iteration):
@@ -184,14 +182,34 @@ class Lakers(sc2.BotAI):
                 self.actions.append(worker.attack(target))
         await self.do_actions(self.actions)
 		
-    async def do_rush(self, iteration):
-        self.actions = []
+    async def do_rush(self, cc):
         target = self.enemy_start_locations[0]
+        #target = self.enemy_expand_location
         for marine in self.units(MARINE):
-            self.actions.append(marine.attack(target))
+            self.combinedActions.append(marine.attack(target))
         for tank in self.units(SIEGETANK):
-            self.actions.append(tank.attack(target))				
-        await self.do_actions(self.actions)		
+            self.combinedActions.append(tank.attack(target))				
+
+        if self.units(SIEGETANK).amount > 0:
+            for tank in self.units(SIEGETANK):
+                threats = []
+                threats += self.known_enemy_units.closer_than(11, tank.position)
+                if len(threats) > 0:
+                    abilities = await self.get_available_abilities(tank)
+                    if SIEGEMODE_SIEGEMODE in abilities:
+                        self.combinedActions.append(tank(SIEGEMODE_SIEGEMODE))     
+        if self.units(SIEGETANKSIEGED).amount > 0:
+            for sigged_tank in self.units(SIEGETANKSIEGED):
+                threats = []
+                threats += self.known_enemy_units.closer_than(11, sigged_tank.position)
+                if len(threats) == 0:
+                    abilities = await self.get_available_abilities(sigged_tank)
+                    if UNSIEGE_UNSIEGE in abilities:
+                        self.combinedActions.append(sigged_tank(UNSIEGE_UNSIEGE))
+        await self.do_actions(self.combinedActions)   
+            
+        
+                        
 
     async def worker_detect(self, iteration):
         self.actions = []
@@ -220,7 +238,7 @@ class Lakers(sc2.BotAI):
                     if self.can_afford(SCV):
                         await self.do(cc.train(SCV))
 
-    async def build_rush_SUPPLYDEPOT(self, cc):
+    async def build_early_SUPPLYDEPOT(self, cc):
     #   第一个房子，堵路口
         if self.units(SUPPLYDEPOT).amount < 1 and self.supply_left <= 7 and self.can_afford(SUPPLYDEPOT) and not self.already_pending(SUPPLYDEPOT): # and not self.first_supply_built:
             await self.build(SUPPLYDEPOT, near=self.depot_pos1)
@@ -254,7 +272,7 @@ class Lakers(sc2.BotAI):
     async def build_FACTORY(self, cc):
         if self.stage == "early_rush":
             if self.units(FACTORY).amount < 1 and self.units(BARRACKS).ready.exists and self.can_afford(FACTORY) and not self.already_pending(FACTORY):
-                await self.build(FACTORY, near = cc.position.towards(self.game_info.map_center, 15))
+                await self.build(FACTORY, near = cc.position.towards(self.game_info.map_center, 18))
             for sp in self.units(FACTORY).ready:
                 if sp.add_on_tag == 0:
                     await self.do(sp.build(FACTORYTECHLAB))
@@ -277,7 +295,7 @@ class Lakers(sc2.BotAI):
 
     async def build_ENGINEERINGBAY(self, cc):
         if self.units(ENGINEERINGBAY).amount < 1 and self.can_afford(ENGINEERINGBAY) and not self.already_pending(ENGINEERINGBAY):
-            await self.build(ENGINEERINGBAY, near = cc.position.towards(self.game_info.map_center, 9))
+            await self.build(ENGINEERINGBAY, near = cc)
 
     async def build_SENSORTOWER(self, cc):
         if self.units(SENSORTOWER).amount < 2 and self.units(ENGINEERINGBAY).ready.exists and self.can_afford(SENSORTOWER) and not self.already_pending(SENSORTOWER):
@@ -399,7 +417,8 @@ class Lakers(sc2.BotAI):
                             await self.do(EB(self.engineeringUpgrades[self.upgradesIndex]))
                             self.upgradesIndex+=1
 
-
+    #攻击
+    
 
     async def ammendFlyingList(self,rax):
         destination = await self.find_placement(COMMANDCENTER, near =rax.position,max_distance = 100)
