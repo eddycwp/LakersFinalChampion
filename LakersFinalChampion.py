@@ -308,10 +308,83 @@ class Lakers(sc2.BotAI):
             for bs in self.units(STARPORT).ready:
                 await self.do(bs.train(BANSHEE))
 
+    async def defend_rush(self, iteration):
+        # 如果兵力小于15，认为是前期的rush
+        if (len(self.units(MARINE)) + len(self.units(REAPER)) + len(self.units(MARAUDER)) < 15 and self.known_enemy_units) or self.is_defend_rush:
+            threats = []
+            for structure_type in self.defend_around:
+                for structure in self.units(structure_type):
+                    threats += self.known_enemy_units.closer_than(11, structure.position)
+                    if len(threats) > 0:
+                        break
+                if len(threats) > 0:
+                    break
+
+            # 如果有7个及以上的威胁，调动所有农民防守，如果有机枪兵也投入防守
+            if len(threats) >= 7:
+                self.is_defend_rush = True
+                defence_target = threats[0].position.random_on_distance(random.randrange(1, 3))
+                for pr in self.units(SCV):
+                    self.combinedActions.append(pr.attack(defence_target))
+                for ma in self.units(MARINE):
+                    self.combinedActions.append(ma.attack(defence_target))
+
+                # 如果敌军拥有6个以上的农民，认为对方在使用农民rush，所以对方发展必定滞后，所以后面直接rush回去
+                if self.known_enemy_units.filter(lambda unit: unit.type_id is SCV).amount >= 6:
+                    self.is_worker_rush = True
+
+            # 如果有2-6个威胁，调动一半农民防守，如果有机枪兵也投入防守
+            elif 1 < len(threats) < 7:
+                self.is_defend_rush = True
+                defence_target = threats[0].position.random_on_distance(random.randrange(1, 3))
+                self.scv1 = self.units(SCV).random_group_of(round(len(self.units(SCV)) / 2))
+                for scv in self.scv1:
+                    self.combinedActions.append(scv.attack(defence_target))
+                for ma in self.units(MARINE):
+                    self.combinedActions.append(ma.attack(defence_target))
+
+            # 只有一个威胁，视为骚扰，调动一个农民防守，如果有机枪兵也投入防守
+            elif len(threats) == 1 and not self.is_defend_rush:
+                self.is_defend_rush = True
+                defence_target = threats[0].position.random_on_distance(random.randrange(1, 3))
+                for scv in self.units(SCV):
+                    self.combinedActions.append(scv.attack(defence_target))
+                    break
+                for ma in self.units(MARINE):
+                    self.combinedActions.append(ma.attack(defence_target))
+
+            elif len(threats) == 0 and self.is_defend_rush:
+                #if self.is_worker_rush:
+                #    # 以彼之道，还施彼身
+                #    print("We will bring you glory!!")
+                #    for worker in self.workers:
+                #        self.combinedActions.append(worker.attack(self.enemy_start_locations[0]))
+                #else:
+                # 继续采矿
+                for worker in self.workers:
+                    closest_mineral_patch = self.state.mineral_field.closest_to(worker)
+                    self.combinedActions.append(worker.gather(closest_mineral_patch))
+
+                # 小规模防守反击
+                if self.units(MARINE).amount > 5:
+                    self.ca_ma = self.units(MARINE).random_group_of(5)
+                    for ma in self.ca_ma:
+                        self.combinedActions.append(ma.attach(self.enemy_start_locations[0]))
+                if self.units(BANSHEE).amount > 2:
+                    self.ca_bs = self.units(BANSHEE).random_group_of(2)
+                    for bs in self.ca_bs:
+                        self.combinedActions.append(bs.attack(self.enemy_start_locations[0]))
+
+                self.is_worker_rush = False
+                self.is_defend_rush = False
+
+        await self.do_actions(self.combinedActions)
+        
     async def expand_command_center(self, iteration):
         if self.units(COMMANDCENTER).exists and (self.units(COMMANDCENTER).amount < 2 or (iteration > 400 and self.units(COMMANDCENTER).amount < 3)) and self.can_afford(COMMANDCENTER):
             location = await self.get_next_expansion()
             await self.build(COMMANDCENTER, near=location, max_distance=10, random_alternative=False, placement_step=1)
+
 
 def main():
     sc2.run_game(sc2.maps.get("PortAleksanderLE"), [
